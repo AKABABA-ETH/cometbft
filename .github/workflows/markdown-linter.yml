@@ -1,38 +1,36 @@
-name: Markdown Linter
+name: markdown-linter
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "**.md"
-      - "**.yml"
-      - "**.yaml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**.md"
-      - "**.yml"
-      - "**.yaml"
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Super linter
+  markdown-lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
-      - name: Lint Code Base
-        uses: docker://github/super-linter:v4
-        env:
-          VALIDATE_ALL_CODEBASE: true
-          DEFAULT_BRANCH: main
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_MD: true
-          VALIDATE_OPENAPI: true
-          VALIDATE_YAML: true
-          YAML_CONFIG_FILE: yaml-lint.yml
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install markdownlint-cli
+        run: npm install -g markdownlint-cli@0.39.0
+        shell: bash
+
+      - name: Run markdownlint
+        run: markdownlint --config .markdownlint.yaml **/*.md
+        shell: bash
+
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run markdown link check
+        uses: gaurav-nelson/github-action-markdown-link-check@1.0.15
+        with:
+          config-file: '.github/markdown-link-check-config.json'
+          folder-path: '.'
