@@ -21,25 +21,21 @@ proxy_app = "{{ .BaseConfig.ProxyApp }}"
 # A custom human readable name for this node
 moniker = "{{ .BaseConfig.Moniker }}"
 
-# Database backend: goleveldb | rocksdb | badgerdb | pebbledb
+# Database backend: badgerdb | goleveldb | pebbledb | rocksdb
+# * badgerdb (uses github.com/dgraph-io/badger)
+#   - stable
+#   - pure go
+#   - use badgerdb build tag (go build -tags badgerdb)
 # * goleveldb (github.com/syndtr/goleveldb)
 #   - UNMAINTAINED
 #   - stable
 #   - pure go
+# * pebbledb (uses github.com/cockroachdb/pebble)
+#   - stable
+#   - pure go
 # * rocksdb (uses github.com/linxGnu/grocksdb)
-#   - EXPERIMENTAL
 #   - requires gcc
 #   - use rocksdb build tag (go build -tags rocksdb)
-# * badgerdb (uses github.com/dgraph-io/badger)
-#   - EXPERIMENTAL
-#   - stable
-#   - pure go
-#   - use badgerdb build tag (go build -tags badgerdb)
-# * pebbledb (uses github.com/cockroachdb/pebble)
-#   - EXPERIMENTAL
-#   - stable
-#   - pure go
-#   - use pebbledb build tag (go build -tags pebbledb)
 db_backend = "{{ .BaseConfig.DBBackend }}"
 
 # Database directory
@@ -325,7 +321,7 @@ dial_timeout = "{{ .P2P.DialTimeout }}"
 #  - "nop"   : nop-mempool (short for no operation; the ABCI app is responsible
 #  for storing, disseminating and proposing txs). "create_empty_blocks=false" is
 #  not supported.
-type = "flood"
+type = "{{ .Mempool.Type }}"
 
 # recheck (default: true) defines whether CometBFT should recheck the
 # validity for all remaining transaction in the mempool after a block.

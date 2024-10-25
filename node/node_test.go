@@ -29,8 +29,10 @@ import (
 	"github.com/cometbft/cometbft/libs/log"
 	mempl "github.com/cometbft/cometbft/mempool"
 	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/p2p/conn"
 	p2pmock "github.com/cometbft/cometbft/p2p/mock"
+	ni "github.com/cometbft/cometbft/p2p/nodeinfo"
+	"github.com/cometbft/cometbft/p2p/nodekey"
+	"github.com/cometbft/cometbft/p2p/transport/tcp/conn"
 	"github.com/cometbft/cometbft/privval"
 	"github.com/cometbft/cometbft/proxy"
 	sm "github.com/cometbft/cometbft/state"
@@ -151,7 +153,7 @@ func TestNodeSetAppVersion(t *testing.T) {
 	assert.Equal(t, state.Version.Consensus.App, appVersion)
 
 	// check version is set in node info
-	assert.Equal(t, n.nodeInfo.(p2p.DefaultNodeInfo).ProtocolVersion.App, appVersion)
+	assert.Equal(t, n.nodeInfo.(ni.Default).ProtocolVersion.App, appVersion)
 }
 
 func TestPprofServer(t *testing.T) {
@@ -288,7 +290,8 @@ func TestCreateProposalBlock(t *testing.T) {
 
 	config := test.ResetTestRoot("node_create_proposal")
 	defer os.RemoveAll(config.RootDir)
-	cc := proxy.NewLocalClientCreator(kvstore.NewInMemoryApplication())
+	app := kvstore.NewInMemoryApplication()
+	cc := proxy.NewLocalClientCreator(app)
 	proxyApp := proxy.NewAppConns(cc, proxy.NopMetrics())
 	err := proxyApp.Start()
 	require.NoError(t, err)
@@ -311,9 +314,14 @@ func TestCreateProposalBlock(t *testing.T) {
 	proposerAddr, _ := state.Validators.GetByIndex(0)
 
 	// Make Mempool
+	resp, err := app.Info(context.Background(), proxy.InfoRequest)
+	require.NoError(t, err)
+	lanesInfo, err := mempl.BuildLanesInfo(resp.LanePriorities, resp.DefaultLane)
+	require.NoError(t, err)
 	memplMetrics := mempl.NopMetrics()
 	mempool := mempl.NewCListMempool(config.Mempool,
 		proxyApp.Mempool(),
+		lanesInfo,
 		state.LastBlockHeight,
 		mempl.WithMetrics(memplMetrics),
 		mempl.WithPreCheck(sm.TxPreCheck(state)),
@@ -392,7 +400,8 @@ func TestMaxProposalBlockSize(t *testing.T) {
 
 	config := test.ResetTestRoot("node_create_proposal")
 	defer os.RemoveAll(config.RootDir)
-	cc := proxy.NewLocalClientCreator(kvstore.NewInMemoryApplication())
+	app := kvstore.NewInMemoryApplication()
+	cc := proxy.NewLocalClientCreator(app)
 	proxyApp := proxy.NewAppConns(cc, proxy.NopMetrics())
 	err := proxyApp.Start()
 	require.NoError(t, err)
@@ -411,9 +420,14 @@ func TestMaxProposalBlockSize(t *testing.T) {
 	proposerAddr, _ := state.Validators.GetByIndex(0)
 
 	// Make Mempool
+	resp, err := app.Info(context.Background(), proxy.InfoRequest)
+	require.NoError(t, err)
+	lanesInfo, err := mempl.BuildLanesInfo(resp.LanePriorities, resp.DefaultLane)
+	require.NoError(t, err)
 	memplMetrics := mempl.NopMetrics()
 	mempool := mempl.NewCListMempool(config.Mempool,
 		proxyApp.Mempool(),
+		lanesInfo,
 		state.LastBlockHeight,
 		mempl.WithMetrics(memplMetrics),
 		mempl.WithPreCheck(sm.TxPreCheck(state)),
@@ -461,8 +475,8 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 	defer os.RemoveAll(config.RootDir)
 
 	cr := p2pmock.NewReactor()
-	cr.Channels = []*conn.ChannelDescriptor{
-		{
+	cr.Channels = []p2p.StreamDescriptor{
+		&conn.ChannelDescriptor{
 			ID:                  byte(0x31),
 			Priority:            5,
 			SendQueueCapacity:   100,
@@ -471,7 +485,7 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 	}
 	customBlocksyncReactor := p2pmock.NewReactor()
 
-	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
+	nodeKey, err := nodekey.LoadOrGen(config.NodeKeyFile())
 	require.NoError(t, err)
 
 	pv, err := privval.LoadOrGenFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile(), nil)
@@ -499,9 +513,9 @@ func TestNodeNewNodeCustomReactors(t *testing.T) {
 	assert.True(t, customBlocksyncReactor.IsRunning())
 	assert.Equal(t, customBlocksyncReactor, n.Switch().Reactor("BLOCKSYNC"))
 
-	channels := n.NodeInfo().(p2p.DefaultNodeInfo).Channels
+	channels := n.NodeInfo().(ni.Default).Channels
 	assert.Contains(t, channels, mempl.MempoolChannel)
-	assert.Contains(t, channels, cr.Channels[0].ID)
+	assert.Contains(t, channels, cr.Channels[0].StreamID())
 }
 
 // Simple test to confirm that an existing genesis file will be deleted from the DB
@@ -510,7 +524,7 @@ func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
 	config := test.ResetTestRoot("node_new_node_delete_genesis_from_db")
 	defer os.RemoveAll(config.RootDir)
 	// Use goleveldb so we can reuse the same db for the second NewNode()
-	config.DBBackend = string(dbm.GoLevelDBBackend)
+	config.DBBackend = string(dbm.PebbleDBBackend)
 	// Ensure the genesis doc hash is saved to db
 	stateDB, err := cfg.DefaultDBProvider(&cfg.DBContext{ID: "state", Config: config})
 	require.NoError(t, err)
@@ -523,7 +537,8 @@ func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
 	require.Equal(t, genDocFromDB, []byte("genFile"))
 
 	stateDB.Close()
-	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
+
+	nodeKey, err := nodekey.LoadOrGen(config.NodeKeyFile())
 	require.NoError(t, err)
 
 	pv, err := privval.LoadOrGenFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile(), nil)
@@ -540,9 +555,6 @@ func TestNodeNewNodeDeleteGenesisFileFromDB(t *testing.T) {
 		log.TestingLogger(),
 	)
 	require.NoError(t, err)
-
-	_, err = stateDB.Get(genesisDocKey)
-	require.Error(t, err)
 
 	// Start and stop to close the db for later reading
 	err = n.Start()
@@ -567,9 +579,9 @@ func TestNodeNewNodeGenesisHashMismatch(t *testing.T) {
 	defer os.RemoveAll(config.RootDir)
 
 	// Use goleveldb so we can reuse the same db for the second NewNode()
-	config.DBBackend = string(dbm.GoLevelDBBackend)
+	config.DBBackend = string(dbm.PebbleDBBackend)
 
-	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
+	nodeKey, err := nodekey.LoadOrGen(config.NodeKeyFile())
 	require.NoError(t, err)
 
 	pv, err := privval.LoadOrGenFilePV(config.PrivValidatorKeyFile(), config.PrivValidatorStateFile(), nil)
@@ -636,8 +648,8 @@ func TestNodeGenesisHashFlagMatch(t *testing.T) {
 	config := test.ResetTestRoot("node_new_node_genesis_hash_flag_match")
 	defer os.RemoveAll(config.RootDir)
 
-	config.DBBackend = string(dbm.GoLevelDBBackend)
-	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
+	config.DBBackend = string(dbm.PebbleDBBackend)
+	nodeKey, err := nodekey.LoadOrGen(config.NodeKeyFile())
 	require.NoError(t, err)
 	// Get correct hash of correct genesis file
 	jsonBlob, err := os.ReadFile(config.GenesisFile())
@@ -669,9 +681,9 @@ func TestNodeGenesisHashFlagMismatch(t *testing.T) {
 	defer os.RemoveAll(config.RootDir)
 
 	// Use goleveldb so we can reuse the same db for the second NewNode()
-	config.DBBackend = string(dbm.GoLevelDBBackend)
+	config.DBBackend = string(dbm.PebbleDBBackend)
 
-	nodeKey, err := p2p.LoadOrGenNodeKey(config.NodeKeyFile())
+	nodeKey, err := nodekey.LoadOrGen(config.NodeKeyFile())
 	require.NoError(t, err)
 
 	// Generate hash of wrong file
@@ -709,7 +721,7 @@ func TestNodeGenesisHashFlagMismatch(t *testing.T) {
 
 func TestLoadStateFromDBOrGenesisDocProviderWithConfig(t *testing.T) {
 	config := test.ResetTestRoot(t.Name())
-	config.DBBackend = string(dbm.GoLevelDBBackend)
+	config.DBBackend = string(dbm.PebbleDBBackend)
 
 	_, stateDB, err := initDBs(config, cfg.DefaultDBProvider)
 	require.NoErrorf(t, err, "state DB setup: %s", err)

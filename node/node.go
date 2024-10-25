@@ -28,7 +28,11 @@ import (
 	"github.com/cometbft/cometbft/light"
 	mempl "github.com/cometbft/cometbft/mempool"
 	"github.com/cometbft/cometbft/p2p"
+	na "github.com/cometbft/cometbft/p2p/netaddr"
+	ni "github.com/cometbft/cometbft/p2p/nodeinfo"
+	"github.com/cometbft/cometbft/p2p/nodekey"
 	"github.com/cometbft/cometbft/p2p/pex"
+	"github.com/cometbft/cometbft/p2p/transport/tcp"
 	"github.com/cometbft/cometbft/proxy"
 	rpccore "github.com/cometbft/cometbft/rpc/core"
 	grpcserver "github.com/cometbft/cometbft/rpc/grpc/server"
@@ -56,11 +60,11 @@ type Node struct {
 	privValidator types.PrivValidator // local node's validator key
 
 	// network
-	transport   *p2p.MultiplexTransport
+	transport   *tcp.MultiplexTransport
 	sw          *p2p.Switch  // p2p connections
 	addrBook    pex.AddrBook // known peers
-	nodeInfo    p2p.NodeInfo
-	nodeKey     *p2p.NodeKey // our node privkey
+	nodeInfo    ni.NodeInfo
+	nodeKey     *nodekey.NodeKey // our node privkey
 	isListening bool
 
 	// services
@@ -127,16 +131,15 @@ func CustomReactors(reactors map[string]p2p.Reactor) Option {
 			// NOTE: This is a bit messy now with the type casting but is
 			// cleaned up in the following version when NodeInfo is changed from
 			// and interface to a concrete type
-			if ni, ok := n.nodeInfo.(p2p.DefaultNodeInfo); ok {
-				for _, chDesc := range reactor.GetChannels() {
-					if !ni.HasChannel(chDesc.ID) {
-						ni.Channels = append(ni.Channels, chDesc.ID)
-						n.transport.AddChannel(chDesc.ID)
+			if ni, ok := n.nodeInfo.(ni.Default); ok {
+				for _, chDesc := range reactor.StreamDescriptors() {
+					if !ni.HasChannel(chDesc.StreamID()) {
+						ni.Channels = append(ni.Channels, chDesc.StreamID())
 					}
 				}
 				n.nodeInfo = ni
 			} else {
-				n.Logger.Error("Node info is not of type DefaultNodeInfo. Custom reactor channels can not be added.")
+				n.Logger.Error("Node info is not of type ni.Default. Custom reactor channels can not be added.")
 			}
 		}
 	}
@@ -280,7 +283,7 @@ func BootstrapState(ctx context.Context, config *cfg.Config, dbProvider cfg.DBPr
 func NewNode(ctx context.Context,
 	config *cfg.Config,
 	privValidator types.PrivValidator,
-	nodeKey *p2p.NodeKey,
+	nodeKey *nodekey.NodeKey,
 	clientCreator proxy.ClientCreator,
 	genesisDocProvider GenesisDocProvider,
 	dbProvider cfg.DBProvider,
@@ -308,7 +311,7 @@ func NewNode(ctx context.Context,
 func NewNodeWithCliParams(ctx context.Context,
 	config *cfg.Config,
 	privValidator types.PrivValidator,
-	nodeKey *p2p.NodeKey,
+	nodeKey *nodekey.NodeKey,
 	clientCreator proxy.ClientCreator,
 	genesisDocProvider GenesisDocProvider,
 	dbProvider cfg.DBProvider,
@@ -402,8 +405,13 @@ func NewNodeWithCliParams(ctx context.Context,
 	// Create the handshaker, which calls RequestInfo, sets the AppVersion on the state,
 	// and replays any blocks as necessary to sync CometBFT with the app.
 	consensusLogger := logger.With("module", "consensus")
+
+	appInfoResponse, err := proxyApp.Query().Info(ctx, proxy.InfoRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error calling ABCI Info method: %v", err)
+	}
 	if !stateSync {
-		if err := doHandshake(ctx, stateStore, state, blockStore, genDoc, eventBus, proxyApp, consensusLogger); err != nil {
+		if err := doHandshake(ctx, stateStore, state, blockStore, genDoc, eventBus, appInfoResponse, proxyApp, consensusLogger); err != nil {
 			return nil, err
 		}
 
@@ -421,7 +429,7 @@ func NewNodeWithCliParams(ctx context.Context,
 	// Blocksync is always active, except if the local node blocks the chain
 	waitSync := !state.Validators.ValidatorBlocksTheChain(localAddr)
 
-	mempool, mempoolReactor := createMempoolAndMempoolReactor(config, proxyApp, state, eventBus, waitSync, memplMetrics, logger)
+	mempool, mempoolReactor := createMempoolAndMempoolReactor(config, proxyApp, state, eventBus, waitSync, memplMetrics, logger, appInfoResponse)
 
 	evidenceReactor, evidencePool, err := createEvidenceReactor(config, dbProvider, stateStore, blockStore, logger)
 	if err != nil {
@@ -493,7 +501,7 @@ func NewNodeWithCliParams(ctx context.Context,
 		return nil, err
 	}
 
-	transport, peerFilters := createTransport(config, nodeInfo, nodeKey, proxyApp)
+	transport, peerFilters := createTransport(config, nodeKey, proxyApp)
 
 	p2pLogger := logger.With("module", "p2p")
 	sw := createSwitch(
@@ -522,7 +530,7 @@ func NewNodeWithCliParams(ctx context.Context,
 	//
 	// We need to set Seeds and PersistentPeers on the switch,
 	// since it needs to be able to use these (and their DNS names)
-	// even if the PEX is off. We can include the DNS name in the NetAddress,
+	// even if the PEX is off. We can include the DNS name in the na.NetAddr,
 	// but it would still be nice to have a clear list of the current "PersistentPeers"
 	// somewhere that we can return with net_info.
 	//
@@ -605,7 +613,7 @@ func (n *Node) OnStart() error {
 	}
 
 	// Start the transport.
-	addr, err := p2p.NewNetAddressString(p2p.IDAddressString(n.nodeKey.ID(), n.config.P2P.ListenAddress))
+	addr, err := na.NewFromString(na.IDAddrString(n.nodeKey.ID(), n.config.P2P.ListenAddress))
 	if err != nil {
 		return err
 	}
@@ -1008,24 +1016,24 @@ func (n *Node) IsListening() bool {
 }
 
 // NodeInfo returns the Node's Info from the Switch.
-func (n *Node) NodeInfo() p2p.NodeInfo {
+func (n *Node) NodeInfo() ni.NodeInfo {
 	return n.nodeInfo
 }
 
 func makeNodeInfo(
 	config *cfg.Config,
-	nodeKey *p2p.NodeKey,
+	nodeKey *nodekey.NodeKey,
 	txIndexer txindex.TxIndexer,
 	genDoc *types.GenesisDoc,
 	state sm.State,
-) (p2p.DefaultNodeInfo, error) {
+) (ni.Default, error) {
 	txIndexerStatus := "on"
 	if _, ok := txIndexer.(*null.TxIndex); ok {
 		txIndexerStatus = "off"
 	}
 
-	nodeInfo := p2p.DefaultNodeInfo{
-		ProtocolVersion: p2p.NewProtocolVersion(
+	nodeInfo := ni.Default{
+		ProtocolVersion: ni.NewProtocolVersion(
 			version.P2PProtocol, // global
 			state.Version.Consensus.Block,
 			state.Version.Consensus.App,
@@ -1041,7 +1049,7 @@ func makeNodeInfo(
 			statesync.SnapshotChannel, statesync.ChunkChannel,
 		},
 		Moniker: config.Moniker,
-		Other: p2p.DefaultNodeInfoOther{
+		Other: ni.DefaultOther{
 			TxIndex:    txIndexerStatus,
 			RPCAddress: config.RPC.ListenAddress,
 		},
