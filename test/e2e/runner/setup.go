@@ -53,10 +53,6 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 		return err
 	}
 
-	if err := infp.Setup(); err != nil {
-		return err
-	}
-
 	genesis, err := MakeGenesis(testnet)
 	if err != nil {
 		return err
@@ -122,6 +118,20 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 			filepath.Join(nodeDir, PrivvalDummyKeyFile),
 			filepath.Join(nodeDir, PrivvalDummyStateFile),
 		)).Save()
+
+		if testnet.LatencyEmulationEnabled {
+			// Generate a shell script file containing tc (traffic control) commands
+			// to emulate latency to other nodes.
+			tcCmds, err := tcCommands(node, infp)
+			if err != nil {
+				return err
+			}
+			latencyPath := filepath.Join(nodeDir, "emulate-latency.sh")
+			//nolint: gosec // G306: Expect WriteFile permissions to be 0600 or less
+			if err = os.WriteFile(latencyPath, []byte(strings.Join(tcCmds, "\n")), 0o755); err != nil {
+				return err
+			}
+		}
 	}
 
 	if testnet.Prometheus {
@@ -134,6 +144,11 @@ func Setup(testnet *e2e.Testnet, infp infra.Provider) error {
 		if err := WritePrometheusConfig(testnet, filepath.Join(testnet.Dir, "prometheus.yml")); err != nil {
 			return err
 		}
+	}
+
+	//nolint: revive
+	if err := infp.Setup(); err != nil {
+		return err
 	}
 
 	return nil
@@ -335,6 +350,7 @@ func MakeConfig(node *e2e.Node) (*config.Config, error) {
 		cfg.LogLevel = node.Testnet.LogLevel
 	}
 
+	cfg.LogColors = false
 	if node.Testnet.LogFormat != "" {
 		cfg.LogFormat = node.Testnet.LogFormat
 	}
@@ -442,6 +458,8 @@ func MakeAppConfig(node *e2e.Node) ([]byte, error) {
 		}
 	}
 
+	// TODO: check if the produced validator updates is indeed valid.
+	// This goes to the application configuration file.
 	if len(node.Testnet.ValidatorUpdates) > 0 {
 		validatorUpdates := map[string]map[string]int64{}
 		for height, validators := range node.Testnet.ValidatorUpdates {
@@ -453,6 +471,10 @@ func MakeAppConfig(node *e2e.Node) ([]byte, error) {
 				}
 				updateVals[base64.StdEncoding.EncodeToString(validator.PrivvalKey.PubKey().Bytes())] = power
 			}
+			// TODO: the validator updates are written to the toml
+			// file in lexicographical order. This means that
+			// update 1000 comes after update 1, and much before
+			// update 2. Consider producing `0001` instead of `1`.
 			validatorUpdates[strconv.FormatInt(height, 10)] = updateVals
 		}
 		cfg["validator_update"] = validatorUpdates
