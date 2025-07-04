@@ -13,12 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v2"
-	"github.com/cometbft/cometbft/crypto"
-	"github.com/cometbft/cometbft/crypto/ed25519"
-	"github.com/cometbft/cometbft/crypto/secp256k1"
-	"github.com/cometbft/cometbft/crypto/secp256k1eth"
-	cmtrand "github.com/cometbft/cometbft/internal/rand"
-	cmtmath "github.com/cometbft/cometbft/libs/math"
+	"github.com/cometbft/cometbft/v2/crypto"
+	"github.com/cometbft/cometbft/v2/crypto/ed25519"
+	"github.com/cometbft/cometbft/v2/crypto/secp256k1"
+	cmtrand "github.com/cometbft/cometbft/v2/internal/rand"
+	cmtmath "github.com/cometbft/cometbft/v2/libs/math"
 )
 
 func TestValidatorSetBasic(t *testing.T) {
@@ -1717,7 +1716,7 @@ func TestValidatorSet_AllKeysHaveSameType(t *testing.T) {
 			sameType: false,
 		},
 		{
-			vals:     NewValidatorSet([]*Validator{NewValidator(secp256k1eth.GenPrivKey().PubKey(), 200), NewValidator(secp256k1.GenPrivKey().PubKey(), 200)}),
+			vals:     NewValidatorSet([]*Validator{NewValidator(ed25519.GenPrivKey().PubKey(), 200), NewValidator(secp256k1.GenPrivKey().PubKey(), 200)}),
 			sameType: false,
 		},
 	}

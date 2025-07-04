@@ -3,24 +3,16 @@ package core
 import (
 	"sort"
 
-	"github.com/cometbft/cometbft/libs/bytes"
-	cmtmath "github.com/cometbft/cometbft/libs/math"
-	cmtquery "github.com/cometbft/cometbft/libs/pubsub/query"
-	ctypes "github.com/cometbft/cometbft/rpc/core/types"
-	rpctypes "github.com/cometbft/cometbft/rpc/jsonrpc/types"
-	blockidxnull "github.com/cometbft/cometbft/state/indexer/block/null"
-	"github.com/cometbft/cometbft/types"
+	"github.com/cometbft/cometbft/v2/libs/bytes"
+	cmtmath "github.com/cometbft/cometbft/v2/libs/math"
+	cmtquery "github.com/cometbft/cometbft/v2/libs/pubsub/query"
+	ctypes "github.com/cometbft/cometbft/v2/rpc/core/types"
+	rpctypes "github.com/cometbft/cometbft/v2/rpc/jsonrpc/types"
+	blockidxnull "github.com/cometbft/cometbft/v2/state/indexer/block/null"
+	"github.com/cometbft/cometbft/v2/types"
 )
 
 // BlockchainInfo gets block headers for minHeight <= height <= maxHeight.
-//
-// If maxHeight does not yet exist, blocks up to the current height will be
-// returned. If minHeight does not exist (due to pruning), earliest existing
-// height will be used.
-//
-// At most 20 items will be returned. Block headers are returned in descending
-// order (highest first).
-//
 // More: https://docs.cometbft.com/main/rpc/#/Info/blockchain
 func (env *Environment) BlockchainInfo(
 	_ *rpctypes.Context,

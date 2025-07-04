@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	cmterrors "github.com/cometbft/cometbft/types/errors"
-	"github.com/cometbft/cometbft/version"
+	cmterrors "github.com/cometbft/cometbft/v2/types/errors"
+	"github.com/cometbft/cometbft/v2/version"
 )
 
 const (
@@ -820,10 +820,6 @@ type P2PConfig struct { //nolint: maligned
 	// Toggle to disable guard against peers connecting from the same ip.
 	AllowDuplicateIP bool `mapstructure:"allow_duplicate_ip"`
 
-	// Peer connection configuration.
-	HandshakeTimeout time.Duration `mapstructure:"handshake_timeout"`
-	DialTimeout      time.Duration `mapstructure:"dial_timeout"`
-
 	// Testing params.
 	// Force dial to fail
 	TestDialFail bool `mapstructure:"test_dial_fail"`
@@ -849,8 +845,6 @@ func DefaultP2PConfig() *P2PConfig {
 		PexReactor:                   true,
 		SeedMode:                     false,
 		AllowDuplicateIP:             false,
-		HandshakeTimeout:             20 * time.Second,
-		DialTimeout:                  3 * time.Second,
 		TestDialFail:                 false,
 		TestFuzz:                     false,
 		TestFuzzConfig:               DefaultFuzzConnConfig(),
@@ -925,7 +919,7 @@ func DefaultFuzzConnConfig() *FuzzConnConfig {
 // Note: Until v0.37 there was a `Version` field to select which implementation
 // of the mempool to use. Two versions used to exist: the current, default
 // implementation (previously called v0), and a prioritized mempool (v1), which
-// was removed (see https://github.com/cometbft/cometbft/issues/260).
+// was removed (see https://github.com/cometbft/cometbft/v2/issues/260).
 type MempoolConfig struct {
 	// The type of mempool for this node to use.
 	//
@@ -1024,7 +1018,7 @@ func DefaultMempoolConfig() *MempoolConfig {
 		CacheSize:   10000,
 		ExperimentalMaxGossipConnectionsToNonPersistentPeers: 0,
 		ExperimentalMaxGossipConnectionsToPersistentPeers:    0,
-		DOGProtocolEnabled:  true,
+		DOGProtocolEnabled:  false,
 		DOGTargetRedundancy: 1,
 		DOGAdjustInterval:   1000 * time.Millisecond,
 	}

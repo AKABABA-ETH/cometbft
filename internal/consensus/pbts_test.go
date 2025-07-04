@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cometbft/cometbft/abci/example/kvstore"
-	abci "github.com/cometbft/cometbft/abci/types"
-	abcimocks "github.com/cometbft/cometbft/abci/types/mocks"
-	"github.com/cometbft/cometbft/internal/test"
-	cmtpubsub "github.com/cometbft/cometbft/libs/pubsub"
-	"github.com/cometbft/cometbft/types"
-	cmttime "github.com/cometbft/cometbft/types/time"
-	cmttimemocks "github.com/cometbft/cometbft/types/time/mocks"
+	"github.com/cometbft/cometbft/v2/abci/example/kvstore"
+	abci "github.com/cometbft/cometbft/v2/abci/types"
+	abcimocks "github.com/cometbft/cometbft/v2/abci/types/mocks"
+	"github.com/cometbft/cometbft/v2/internal/test"
+	cmtpubsub "github.com/cometbft/cometbft/v2/libs/pubsub"
+	"github.com/cometbft/cometbft/v2/types"
+	cmttime "github.com/cometbft/cometbft/v2/types/time"
+	cmttimemocks "github.com/cometbft/cometbft/v2/types/time/mocks"
 )
 
 const (
@@ -526,6 +526,31 @@ func TestPBTSTooFarInTheFutureProposal(t *testing.T) {
 	pbtsTest := newPBTSTestHarness(ctx, t, cfg)
 	results := pbtsTest.run(ctx, t)
 
+	require.Nil(t, results.height2.prevote.BlockID.Hash)
+}
+
+func TestPBTSTooFarInTheFutureProposalOverflow(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// On purpose use a MessageDelay that has an overflow, i.e. infinite
+	// Emulates the logic for adaptive MessageDelay over rounds.
+	synchronyParams := types.DefaultSynchronyParams().InRound(256)
+	synchronyParams.Precision = 1 * time.Millisecond
+
+	// localtime < proposedBlockTime - Precision
+	cfg := pbtsTestConfiguration{
+		synchronyParams:                   synchronyParams,
+		timeoutPropose:                    50 * time.Millisecond,
+		height2ProposedBlockOffset:        100 * time.Millisecond,
+		height2ProposalTimeDeliveryOffset: 10 * time.Millisecond,
+		height4ProposedBlockOffset:        150 * time.Millisecond,
+	}
+
+	pbtsTest := newPBTSTestHarness(ctx, t, cfg)
+	results := pbtsTest.run(ctx, t)
+
+	// The proposal
 	require.Nil(t, results.height2.prevote.BlockID.Hash)
 }
 

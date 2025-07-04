@@ -9,6 +9,10 @@ updates:
     labels:
       - dependencies
       - automerge
+    groups:
+      all-actions:
+        patterns:
+          - "*" # Groups all action updates into a single PR
 
   - package-ecosystem: github-actions
     directory: "/"
@@ -19,36 +23,38 @@ updates:
     labels:
       - dependencies
       - automerge
+    groups:
+      all-actions:
+        patterns:
+          - "*" # Groups all action updates into a single PR
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: weekly
+      interval: monthly
     target-branch: "v0.38.x"
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - automerge
+    groups:
+      all-actions:
+        patterns:
+          - "*" # Groups all action updates into a single PR
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
-    target-branch: "v0.37.x"
+    target-branch: "v2.x"
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - automerge
-
-  - package-ecosystem: github-actions
-    directory: "/"
-    schedule:
-      interval: weekly
-    target-branch: "v0.34.x"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
+    groups:
+      all-actions:
+        patterns:
+          - "*" # Groups all action updates into a single PR
 
   ###################################
   ##
@@ -63,6 +69,10 @@ updates:
     labels:
       - dependencies
       - automerge
+    groups:
+      all-go-modules:
+        patterns:
+          - "*" # Groups all Go module updates into a single PR
 
   - package-ecosystem: gomod
     directory: "/"
@@ -73,6 +83,10 @@ updates:
     labels:
       - dependencies
       - automerge
+    groups:
+      all-go-modules:
+        patterns:
+          - "*" # Groups all Go module updates into a single PR
 
   - package-ecosystem: gomod
     directory: "/"
@@ -83,23 +97,21 @@ updates:
     labels:
       - dependencies
       - automerge
+    groups:
+      all-go-modules:
+        patterns:
+          - "*" # Groups all Go module updates into a single PR
 
   - package-ecosystem: gomod
     directory: "/"
     schedule:
-      interval: monthly
-    target-branch: "v0.37.x"
+      interval: weekly
+    target-branch: "v2.x"
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - automerge
-
-  - package-ecosystem: gomod
-    directory: "/"
-    schedule:
-      interval: monthly
-    target-branch: "v0.34.x"
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - automerge
+    groups:
+      all-go-modules:
+        patterns:
+          - "*" # Groups all Go module updates into a single PR

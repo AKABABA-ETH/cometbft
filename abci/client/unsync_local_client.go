@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/cometbft/cometbft/abci/types"
-	"github.com/cometbft/cometbft/libs/service"
+	"github.com/cometbft/cometbft/v2/abci/types"
+	"github.com/cometbft/cometbft/v2/libs/service"
 )
 
 type unsyncLocalClient struct {
@@ -29,6 +29,16 @@ var _ Client = (*unsyncLocalClient)(nil)
 // proxy does not impose any concurrency restrictions, it is then left up to
 // the application to implement its own concurrency for the relevant group of
 // calls.
+//
+// Use UnsyncLocalClient when:
+// - Your ABCI application handles concurrency internally
+// - You want to reduce synchronization overhead
+// - You're proxying to an application that already handles concurrency
+// - You're implementing a proxy that manages concurrency itself
+//
+// See also:
+// - [NewLocalClient]: For a client with full mutex protection
+// - docs/explanation/core/abci-clients.md: For detailed documentation on ABCI clients.
 func NewUnsyncLocalClient(app types.Application) Client {
 	cli := &unsyncLocalClient{
 		Application: app,

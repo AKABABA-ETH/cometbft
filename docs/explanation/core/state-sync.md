@@ -22,7 +22,7 @@ chunked data when bootstrapping.
 Under the state sync section in `config.toml` you will find multiple settings
 that need to be configured in order for your node to use state sync.
 
-Lets breakdown the settings:
+Let's break down the settings:
 
 - `enable`: Enable is to inform the node that you will be using state sync to
   bootstrap your node.
@@ -36,7 +36,7 @@ Lets breakdown the settings:
 - `trust_period`: Trust period is the period in which headers can be verified.
   > :warning: This value should be significantly smaller than the unbonding period.
 
-For other settings, visit the [Configuration](./configuration) page.
+For other settings, visit the [Configuration](./configuration.md) page.
 
 If you need to get the information you need from publicly exposed RPCs, you 
 can use `curl` and [`jq`][jq].

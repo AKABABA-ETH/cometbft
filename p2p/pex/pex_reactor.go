@@ -7,15 +7,15 @@ import (
 	"time"
 
 	tmp2p "github.com/cometbft/cometbft/api/cometbft/p2p/v1"
-	"github.com/cometbft/cometbft/internal/cmap"
-	cmtrand "github.com/cometbft/cometbft/internal/rand"
-	cmtmath "github.com/cometbft/cometbft/libs/math"
-	"github.com/cometbft/cometbft/libs/service"
-	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/p2p/internal/nodekey"
-	na "github.com/cometbft/cometbft/p2p/netaddr"
-	"github.com/cometbft/cometbft/p2p/transport"
-	tcpconn "github.com/cometbft/cometbft/p2p/transport/tcp/conn"
+	"github.com/cometbft/cometbft/v2/internal/cmap"
+	cmtrand "github.com/cometbft/cometbft/v2/internal/rand"
+	cmtmath "github.com/cometbft/cometbft/v2/libs/math"
+	"github.com/cometbft/cometbft/v2/libs/service"
+	"github.com/cometbft/cometbft/v2/p2p"
+	"github.com/cometbft/cometbft/v2/p2p/internal/nodekey"
+	na "github.com/cometbft/cometbft/v2/p2p/netaddr"
+	"github.com/cometbft/cometbft/v2/p2p/transport"
+	tcpconn "github.com/cometbft/cometbft/v2/p2p/transport/tcp/conn"
 )
 
 type Peer = p2p.Peer
@@ -67,11 +67,10 @@ const (
 type Reactor struct {
 	p2p.BaseReactor
 
-	book              AddrBook
-	config            *ReactorConfig
-	ensurePeersCh     chan struct{} // Wakes up ensurePeersRoutine()
-	ensurePeersPeriod time.Duration // TODO: should go in the config
-	peersRoutineWg    sync.WaitGroup
+	book           AddrBook
+	config         *ReactorConfig
+	ensurePeersCh  chan struct{} // Wakes up ensurePeersRoutine()
+	peersRoutineWg sync.WaitGroup
 
 	// maps to prevent abuse
 	requestsSent         *cmap.CMap // ID->struct{}: unanswered send requests
@@ -88,7 +87,7 @@ type Reactor struct {
 func (r *Reactor) minReceiveRequestInterval() time.Duration {
 	// NOTE: must be less than ensurePeersPeriod, otherwise we'll request
 	// peers too quickly from others and they'll think we're bad!
-	return r.ensurePeersPeriod / 3
+	return r.config.EnsurePeersPeriod / 3
 }
 
 // ReactorConfig holds reactor specific configuration data.
@@ -104,6 +103,9 @@ type ReactorConfig struct {
 	// Maximum pause when redialing a persistent peer (if zero, exponential backoff is used)
 	PersistentPeersMaxDialPeriod time.Duration
 
+	// Period to ensure sufficient peers are connected
+	EnsurePeersPeriod time.Duration
+
 	// Seeds is a list of addresses reactor may use
 	// if it can't connect to peers in the addrbook.
 	Seeds []string
@@ -116,11 +118,14 @@ type _attemptsToDial struct {
 
 // NewReactor creates new PEX reactor.
 func NewReactor(b AddrBook, config *ReactorConfig) *Reactor {
+	if config.EnsurePeersPeriod == 0 {
+		config.EnsurePeersPeriod = defaultEnsurePeersPeriod
+	}
+
 	r := &Reactor{
 		book:                 b,
 		config:               config,
 		ensurePeersCh:        make(chan struct{}),
-		ensurePeersPeriod:    defaultEnsurePeersPeriod,
 		requestsSent:         cmap.NewCMap(),
 		lastReceivedRequests: cmap.NewCMap(),
 		crawlPeerInfos:       make(map[nodekey.ID]crawlPeerInfo),
@@ -211,7 +216,7 @@ func (r *Reactor) AddPeer(p Peer) {
 
 // RemovePeer implements Reactor by resetting peer's requests info.
 func (r *Reactor) RemovePeer(p Peer, _ any) {
-	id := string(p.ID())
+	id := p.ID()
 	r.requestsSent.Delete(id)
 	r.lastReceivedRequests.Delete(id)
 }
@@ -243,7 +248,7 @@ func (r *Reactor) Receive(e p2p.Envelope) {
 		// If we're a seed and this is an inbound peer,
 		// respond once and disconnect.
 		if r.config.SeedMode && !e.Src.IsOutbound() {
-			id := string(e.Src.ID())
+			id := e.Src.ID()
 			v := r.lastReceivedRequests.Get(id)
 			if v != nil {
 				// FlushStop/StopPeer are already
@@ -293,7 +298,7 @@ func (r *Reactor) Receive(e p2p.Envelope) {
 
 // enforces a minimum amount of time between requests.
 func (r *Reactor) receiveRequest(src Peer) error {
-	id := string(src.ID())
+	id := src.ID()
 	v := r.lastReceivedRequests.Get(id)
 	if v == nil {
 		// initialize with empty time
@@ -327,7 +332,7 @@ func (r *Reactor) receiveRequest(src Peer) error {
 // RequestAddrs asks peer for more addresses if we do not already have a
 // request out for this peer.
 func (r *Reactor) RequestAddrs(p Peer) {
-	id := string(p.ID())
+	id := p.ID()
 	if r.requestsSent.Has(id) {
 		return
 	}
@@ -343,7 +348,7 @@ func (r *Reactor) RequestAddrs(p Peer) {
 // request for this peer and deletes the open request.
 // If there's no open request for the src peer, it returns an error.
 func (r *Reactor) ReceiveAddrs(addrs []*na.NetAddr, src Peer) error {
-	id := string(src.ID())
+	id := src.ID()
 	if !r.requestsSent.Has(id) {
 		return ErrUnsolicitedList
 	}
@@ -388,18 +393,13 @@ func (*Reactor) SendAddrs(p Peer, netAddrs []*na.NetAddr) {
 	_ = p.Send(e)
 }
 
-// SetEnsurePeersPeriod sets period to ensure peers connected.
-func (r *Reactor) SetEnsurePeersPeriod(d time.Duration) {
-	r.ensurePeersPeriod = d
-}
-
 // Ensures that sufficient peers are connected. (continuous).
 func (r *Reactor) ensurePeersRoutine() {
 	defer r.peersRoutineWg.Done()
 
 	var (
 		seed   = cmtrand.NewRand()
-		jitter = seed.Int63n(r.ensurePeersPeriod.Nanoseconds())
+		jitter = seed.Int63n(r.config.EnsurePeersPeriod.Nanoseconds())
 	)
 
 	// Randomize first round of communication to avoid thundering herd.
@@ -414,7 +414,7 @@ func (r *Reactor) ensurePeersRoutine() {
 	r.ensurePeers(true)
 
 	// fire periodically
-	ticker := time.NewTicker(r.ensurePeersPeriod)
+	ticker := time.NewTicker(r.config.EnsurePeersPeriod)
 	defer ticker.Stop()
 	for {
 		select {

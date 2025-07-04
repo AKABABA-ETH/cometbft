@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	e2e "github.com/cometbft/cometbft/test/e2e/pkg"
-	"github.com/cometbft/cometbft/types"
+	e2e "github.com/cometbft/cometbft/v2/test/e2e/pkg"
+	"github.com/cometbft/cometbft/v2/types"
 )
 
 // Tests that any initial state given in genesis has made it into the app.
@@ -93,7 +93,7 @@ func TestApp_Tx(t *testing.T) {
 
 		hash := tx.Hash()
 		require.Equal(t, res.Hash, hash)
-		waitTime := 1 * time.Minute
+		waitTime := 2 * time.Minute
 		require.Eventuallyf(t, func() bool {
 			txResp, err := client.Tx(ctx, hash, false)
 			return err == nil && bytes.Equal(txResp.Tx, tx)

@@ -11,15 +11,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cometbft/cometbft/abci/example/kvstore"
-	abci "github.com/cometbft/cometbft/abci/types"
 	memproto "github.com/cometbft/cometbft/api/cometbft/mempool/v2"
-	cfg "github.com/cometbft/cometbft/config"
-	cmtrand "github.com/cometbft/cometbft/internal/rand"
-	"github.com/cometbft/cometbft/libs/log"
-	"github.com/cometbft/cometbft/p2p"
-	"github.com/cometbft/cometbft/proxy"
-	"github.com/cometbft/cometbft/types"
+	"github.com/cometbft/cometbft/v2/abci/example/kvstore"
+	abci "github.com/cometbft/cometbft/v2/abci/types"
+	cfg "github.com/cometbft/cometbft/v2/config"
+	cmtrand "github.com/cometbft/cometbft/v2/internal/rand"
+	"github.com/cometbft/cometbft/v2/libs/log"
+	"github.com/cometbft/cometbft/v2/p2p"
+	"github.com/cometbft/cometbft/v2/proxy"
+	"github.com/cometbft/cometbft/v2/types"
 )
 
 const (
@@ -855,6 +855,20 @@ func TestDOGTestRedundancyCalculation(t *testing.T) {
 	reactors[0].redundancyControl.firstTimeTxs.Store(0)
 	redundancy = reactors[0].redundancyControl.currentRedundancy()
 	require.Equal(t, redundancy, reactors[0].redundancyControl.upperBound)
+}
+
+func TestDOGTestDuplicateTransactionFromRPC(t *testing.T) {
+	config := cfg.TestConfig()
+	config.Mempool.DOGProtocolEnabled = true
+	reactors, _ := makeAndConnectReactors(config, 1, nil)
+
+	txs := newUniqueTxs(1)
+
+	_, err := reactors[0].TryAddTx(txs[0], nil)
+	require.NoError(t, err)
+
+	_, err = reactors[0].TryAddTx(txs[0], nil)
+	require.ErrorIs(t, err, ErrTxInCache)
 }
 
 func BenchmarkCurrentRedundancy(b *testing.B) {

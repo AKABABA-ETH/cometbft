@@ -12,16 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	p2p "github.com/cometbft/cometbft/api/cometbft/p2p/v1"
-	"github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/crypto"
-	"github.com/cometbft/cometbft/crypto/ed25519"
-	"github.com/cometbft/cometbft/libs/bytes"
-	"github.com/cometbft/cometbft/libs/log"
-	ni "github.com/cometbft/cometbft/p2p/internal/nodeinfo"
-	"github.com/cometbft/cometbft/p2p/internal/nodekey"
-	na "github.com/cometbft/cometbft/p2p/netaddr"
-	"github.com/cometbft/cometbft/p2p/transport"
-	tcpconn "github.com/cometbft/cometbft/p2p/transport/tcp/conn"
+	"github.com/cometbft/cometbft/v2/config"
+	"github.com/cometbft/cometbft/v2/crypto"
+	"github.com/cometbft/cometbft/v2/crypto/ed25519"
+	"github.com/cometbft/cometbft/v2/libs/bytes"
+	"github.com/cometbft/cometbft/v2/libs/log"
+	ni "github.com/cometbft/cometbft/v2/p2p/internal/nodeinfo"
+	"github.com/cometbft/cometbft/v2/p2p/internal/nodekey"
+	na "github.com/cometbft/cometbft/v2/p2p/netaddr"
+	"github.com/cometbft/cometbft/v2/p2p/transport"
+	tcpconn "github.com/cometbft/cometbft/v2/p2p/transport/tcp/conn"
 )
 
 const testCh = 0x01
@@ -116,7 +116,7 @@ func testDial(addr *na.NetAddr, cfg *config.P2PConfig) (transport.Conn, error) {
 	if cfg.TestDialFail {
 		return nil, errors.New("dial err (peerConfig.DialFail == true)")
 	}
-	conn, err := addr.DialTimeout(cfg.DialTimeout)
+	conn, err := addr.DialTimeout(3 * time.Second)
 	if err != nil {
 		return nil, err
 	}

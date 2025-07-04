@@ -6,15 +6,15 @@ import (
 	"math"
 	"time"
 
-	"github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/internal/cmap"
-	"github.com/cometbft/cometbft/internal/rand"
-	"github.com/cometbft/cometbft/libs/service"
-	ni "github.com/cometbft/cometbft/p2p/internal/nodeinfo"
-	"github.com/cometbft/cometbft/p2p/internal/nodekey"
-	na "github.com/cometbft/cometbft/p2p/netaddr"
-	"github.com/cometbft/cometbft/p2p/transport"
-	"github.com/cometbft/cometbft/p2p/transport/tcp"
+	"github.com/cometbft/cometbft/v2/config"
+	"github.com/cometbft/cometbft/v2/internal/cmap"
+	"github.com/cometbft/cometbft/v2/internal/rand"
+	"github.com/cometbft/cometbft/v2/libs/service"
+	ni "github.com/cometbft/cometbft/v2/p2p/internal/nodeinfo"
+	"github.com/cometbft/cometbft/v2/p2p/internal/nodekey"
+	na "github.com/cometbft/cometbft/v2/p2p/netaddr"
+	"github.com/cometbft/cometbft/v2/p2p/transport"
+	"github.com/cometbft/cometbft/v2/p2p/transport/tcp"
 )
 
 const (
@@ -32,7 +32,8 @@ const (
 	reconnectBackOffAttempts    = 10
 	reconnectBackOffBaseSeconds = 3
 
-	defaultFilterTimeout = 5 * time.Second
+	defaultFilterTimeout    = 5 * time.Second
+	defaultHandshakeTimeout = 20 * time.Second
 )
 
 // -----------------------------------------------------------------------------
@@ -368,11 +369,11 @@ func (sw *Switch) stopAndRemovePeer(p Peer, reason any) {
 //   - ie. if we're getting ErrDuplicatePeer we can stop
 //     because the addrbook got us the peer back already
 func (sw *Switch) reconnectToPeer(addr *na.NetAddr) {
-	if sw.reconnecting.Has(string(addr.ID)) {
+	if sw.reconnecting.Has(addr.ID) {
 		return
 	}
-	sw.reconnecting.Set(string(addr.ID), addr)
-	defer sw.reconnecting.Delete(string(addr.ID))
+	sw.reconnecting.Set(addr.ID, addr)
+	defer sw.reconnecting.Delete(addr.ID)
 
 	start := time.Now()
 	sw.Logger.Info("Reconnecting to peer", "addr", addr)
@@ -526,8 +527,8 @@ func (sw *Switch) DialPeerWithAddress(addr *na.NetAddr) error {
 		return ErrCurrentlyDialingOrExistingAddress{addr.String()}
 	}
 
-	sw.dialing.Set(string(addr.ID), addr)
-	defer sw.dialing.Delete(string(addr.ID))
+	sw.dialing.Set(addr.ID, addr)
+	defer sw.dialing.Delete(addr.ID)
 
 	return sw.addOutboundPeerWithConfig(addr, sw.config)
 }
@@ -541,7 +542,7 @@ func (sw *Switch) randomSleep(interval time.Duration) {
 // IsDialingOrExistingAddress returns true if switch has a peer with the given
 // address or dialing it at the moment.
 func (sw *Switch) IsDialingOrExistingAddress(addr *na.NetAddr) bool {
-	return sw.dialing.Has(string(addr.ID)) ||
+	return sw.dialing.Has(addr.ID) ||
 		sw.peers.Has(addr.ID) ||
 		(!sw.config.AllowDuplicateIP && sw.peers.HasIP(addr.IP))
 }
@@ -570,12 +571,12 @@ func (sw *Switch) AddPersistentPeers(addrs []string) error {
 func (sw *Switch) AddUnconditionalPeerIDs(ids []string) error {
 	sw.Logger.Info("Adding unconditional peer ids", "ids", ids)
 	for _, id := range ids {
-		err := na.ValidateID(nodekey.ID(id))
+		err := na.ValidateID(id)
 		if err != nil {
-			return na.ErrInvalidPeerID{ID: nodekey.ID(id), Source: err}
+			return na.ErrInvalidPeerID{ID: id, Source: err}
 		}
 
-		sw.unconditionalPeerIDs[nodekey.ID(id)] = struct{}{}
+		sw.unconditionalPeerIDs[id] = struct{}{}
 	}
 	return nil
 }
@@ -583,9 +584,9 @@ func (sw *Switch) AddUnconditionalPeerIDs(ids []string) error {
 func (sw *Switch) AddPrivatePeerIDs(ids []string) error {
 	validIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
-		err := na.ValidateID(nodekey.ID(id))
+		err := na.ValidateID(id)
 		if err != nil {
-			return na.ErrInvalidPeerID{ID: nodekey.ID(id), Source: err}
+			return na.ErrInvalidPeerID{ID: id, Source: err}
 		}
 
 		validIDs = append(validIDs, id)
@@ -645,7 +646,7 @@ func (sw *Switch) acceptRoutine() {
 			break
 		}
 
-		nodeInfo, err := handshake(sw.nodeInfo, conn.HandshakeStream(), sw.config.HandshakeTimeout)
+		nodeInfo, err := handshake(sw.nodeInfo, conn.HandshakeStream(), defaultHandshakeTimeout)
 		if err != nil {
 			errRejected, ok := err.(ErrRejected)
 			if ok && errRejected.IsSelf() {
@@ -743,7 +744,7 @@ func (sw *Switch) addOutboundPeerWithConfig(
 		return err
 	}
 
-	nodeInfo, err := handshake(sw.nodeInfo, conn.HandshakeStream(), sw.config.HandshakeTimeout)
+	nodeInfo, err := handshake(sw.nodeInfo, conn.HandshakeStream(), defaultHandshakeTimeout)
 	if err != nil {
 		sw.Logger.Error("Handshake failed", "peer", addr, "err", err)
 		errRejected, ok := err.(ErrRejected)

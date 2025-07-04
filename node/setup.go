@@ -15,32 +15,32 @@ import (
 	_ "github.com/lib/pq" //nolint: gci // provide the psql db driver.
 
 	dbm "github.com/cometbft/cometbft-db"
-	abci "github.com/cometbft/cometbft/abci/types"
-	cfg "github.com/cometbft/cometbft/config"
-	"github.com/cometbft/cometbft/crypto"
-	"github.com/cometbft/cometbft/crypto/tmhash"
-	"github.com/cometbft/cometbft/internal/blocksync"
-	cs "github.com/cometbft/cometbft/internal/consensus"
-	"github.com/cometbft/cometbft/internal/evidence"
-	"github.com/cometbft/cometbft/libs/log"
-	"github.com/cometbft/cometbft/light"
-	mempl "github.com/cometbft/cometbft/mempool"
-	"github.com/cometbft/cometbft/p2p"
-	na "github.com/cometbft/cometbft/p2p/netaddr"
-	"github.com/cometbft/cometbft/p2p/pex"
-	"github.com/cometbft/cometbft/p2p/transport"
-	"github.com/cometbft/cometbft/p2p/transport/tcp"
-	tcpconn "github.com/cometbft/cometbft/p2p/transport/tcp/conn"
-	"github.com/cometbft/cometbft/privval"
-	"github.com/cometbft/cometbft/proxy"
-	sm "github.com/cometbft/cometbft/state"
-	"github.com/cometbft/cometbft/state/indexer"
-	"github.com/cometbft/cometbft/state/indexer/block"
-	"github.com/cometbft/cometbft/state/txindex"
-	"github.com/cometbft/cometbft/statesync"
-	"github.com/cometbft/cometbft/store"
-	"github.com/cometbft/cometbft/types"
-	"github.com/cometbft/cometbft/version"
+	abci "github.com/cometbft/cometbft/v2/abci/types"
+	cfg "github.com/cometbft/cometbft/v2/config"
+	"github.com/cometbft/cometbft/v2/crypto"
+	"github.com/cometbft/cometbft/v2/crypto/tmhash"
+	"github.com/cometbft/cometbft/v2/internal/blocksync"
+	cs "github.com/cometbft/cometbft/v2/internal/consensus"
+	"github.com/cometbft/cometbft/v2/internal/evidence"
+	"github.com/cometbft/cometbft/v2/libs/log"
+	"github.com/cometbft/cometbft/v2/light"
+	mempl "github.com/cometbft/cometbft/v2/mempool"
+	"github.com/cometbft/cometbft/v2/p2p"
+	na "github.com/cometbft/cometbft/v2/p2p/netaddr"
+	"github.com/cometbft/cometbft/v2/p2p/pex"
+	"github.com/cometbft/cometbft/v2/p2p/transport"
+	"github.com/cometbft/cometbft/v2/p2p/transport/tcp"
+	tcpconn "github.com/cometbft/cometbft/v2/p2p/transport/tcp/conn"
+	"github.com/cometbft/cometbft/v2/privval"
+	"github.com/cometbft/cometbft/v2/proxy"
+	sm "github.com/cometbft/cometbft/v2/state"
+	"github.com/cometbft/cometbft/v2/state/indexer"
+	"github.com/cometbft/cometbft/v2/state/indexer/block"
+	"github.com/cometbft/cometbft/v2/state/txindex"
+	"github.com/cometbft/cometbft/v2/statesync"
+	"github.com/cometbft/cometbft/v2/store"
+	"github.com/cometbft/cometbft/v2/types"
+	"github.com/cometbft/cometbft/v2/version"
 )
 
 const readHeaderTimeout = 10 * time.Second
@@ -79,7 +79,7 @@ func DefaultGenesisDocProviderFunc(config *cfg.Config) GenesisDocProvider {
 	return func() (ChecksummedGenesisDoc, error) {
 		// FIXME: find a way to stream the file incrementally,
 		// for the JSON	parser and the checksum computation.
-		// https://github.com/cometbft/cometbft/issues/1302
+		// https://github.com/cometbft/cometbft/v2/issues/1302
 		jsonBlob, err := os.ReadFile(config.GenesisFile())
 		if err != nil {
 			return ChecksummedGenesisDoc{}, ErrorReadingGenesisDoc{Err: err}
@@ -459,7 +459,7 @@ func createTransport(
 			// ABCI query for ID filtering.
 			func(_ p2p.IPeerSet, p p2p.Peer) error {
 				res, err := proxyApp.Query().Query(context.TODO(), &abci.QueryRequest{
-					Path: fmt.Sprintf("/p2p/filter/id/%s", p.ID()),
+					Path: "/p2p/filter/id/" + p.ID(),
 				})
 				if err != nil {
 					return err
@@ -568,14 +568,13 @@ func createPEXReactorAndAddToSwitch(addrBook pex.AddrBook, config *cfg.Config,
 // startStateSync starts an asynchronous state sync process, then switches to block sync mode.
 func startStateSync(
 	ssR *statesync.Reactor,
-	bcR blockSyncReactor,
 	stateProvider statesync.StateProvider,
 	config *cfg.StateSyncConfig,
 	stateStore sm.Store,
 	blockStore *store.BlockStore,
 	state sm.State,
 	dbKeyLayoutVersion string,
-) error {
+) (chan sm.State, chan error, error) {
 	ssR.Logger.Info("Starting state sync")
 
 	if stateProvider == nil {
@@ -592,39 +591,36 @@ func startStateSync(
 			}, ssR.Logger.With("module", "light"),
 			dbKeyLayoutVersion)
 		if err != nil {
-			return fmt.Errorf("failed to set up light client state provider: %w", err)
+			return nil, nil, fmt.Errorf("failed to set up light client state provider: %w", err)
 		}
 	}
 
+	// Run statesync in a separate goroutine in order not to block `Node.Start`
+	stateCh := make(chan sm.State, 1)
+	errc := make(chan error, 1)
 	go func() {
-		state, commit, err := ssR.Sync(stateProvider, config.MaxDiscoveryTime)
+		newState, commit, err := ssR.Sync(stateProvider, config.MaxDiscoveryTime)
 		if err != nil {
-			ssR.Logger.Error("State sync failed", "err", err)
-			err = bcR.SwitchToBlockSync(state)
-			if err != nil {
-				ssR.Logger.Error("Failed to switch to block sync", "err", err)
-				return
-			}
+			errc <- fmt.Errorf("statesync: %w", err)
 			return
 		}
 
-		err = stateStore.Bootstrap(state)
+		err = stateStore.Bootstrap(newState)
 		if err != nil {
-			ssR.Logger.Error("Failed to bootstrap node with new state", "err", err)
+			errc <- fmt.Errorf("bootstrap: %w", err)
 			return
 		}
-		err = blockStore.SaveSeenCommit(state.LastBlockHeight, commit)
+
+		err = blockStore.SaveSeenCommit(newState.LastBlockHeight, commit)
 		if err != nil {
-			ssR.Logger.Error("Failed to store last seen commit", "err", err)
+			errc <- fmt.Errorf("save seen commit: %w", err)
 			return
 		}
-		err = bcR.SwitchToBlockSync(state)
-		if err != nil {
-			ssR.Logger.Error("Failed to switch to block sync", "err", err)
-			return
-		}
+
+		stateCh <- newState
 	}()
-	return nil
+
+	return stateCh, errc, nil
 }
 
 // ------------------------------------------------------------------------------
